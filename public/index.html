@@ -1,40 +1,81 @@
-<input id="url" placeholder="https://example.com">
-<button onclick="go()">Go</button>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Browser Stream</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; margin: 20px; }
+        #view { border: 1px solid #333; cursor: pointer; }
+        input, button { padding: 5px 10px; font-size: 16px; margin: 5px; }
+    </style>
+</head>
+<body>
 
-<canvas id="view" width="800" height="600"></canvas>
+    <h1>Browser Stream</h1>
+    <input id="url" placeholder="https://example.com" size="50">
+    <button onclick="go()">Go</button>
+    <br>
+    <canvas id="view" width="800" height="600"></canvas>
 
-<script>
-const ws = new WebSocket("wss:/browserproxy.onrender.com")
+    <script>
+        // Replace with your Render URL (wss://)
+        const ws = new WebSocket("wss://browserproxy.onrender.com")
+        const canvas = document.getElementById("view")
+        const ctx = canvas.getContext("2d")
 
-const canvas = document.getElementById("view")
-const ctx = canvas.getContext("2d")
+        ws.binaryType = "blob"
 
-ws.binaryType = "blob"
+        ws.onopen = () => console.log("WebSocket connected")
+        ws.onerror = (e) => console.error("WebSocket error:", e)
+        ws.onclose = () => console.log("WebSocket closed")
 
-ws.onmessage = async (event) => {
-    const img = new Image()
-    img.src = URL.createObjectURL(event.data)
-    img.onload = () => {
-        ctx.drawImage(img, 0, 0)
-    }
-}
+        ws.onmessage = async (event) => {
+            const img = new Image()
+            img.src = URL.createObjectURL(event.data)
+            img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        }
 
-function go() {
-    ws.send(JSON.stringify({
-        type: "goto",
-        url: document.getElementById("url").value
-    }))
-}
+        function go() {
+            let url = document.getElementById("url").value.trim()
+            if (!/^https?:\/\//i.test(url)) url = "https://" + url
+            console.log("Sending URL:", url)
+            ws.send(JSON.stringify({ type: "goto", url }))
+        }
 
-canvas.onclick = (e) => {
-    const rect = canvas.getBoundingClientRect()
-    ws.send(JSON.stringify({
-        type: "click",
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top
-    }))
-}
+        // Mouse click
+        canvas.onclick = (e) => {
+            const rect = canvas.getBoundingClientRect()
+            ws.send(JSON.stringify({
+                type: "click",
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            }))
+        }
 
+        // Scroll
+        canvas.onwheel = (e) => {
+            ws.send(JSON.stringify({
+                type: "scroll",
+                deltaY: e.deltaY
+            }))
+            e.preventDefault()
+        }
+
+        // Keyboard typing
+        document.addEventListener("keydown", (e) => {
+            ws.send(JSON.stringify({ type: "keydown", key: e.key }))
+        })
+        document.addEventListener("keyup", (e) => {
+            ws.send(JSON.stringify({ type: "keyup", key: e.key }))
+        })
+
+        // Optional: typing into the page via input
+        document.getElementById("url").addEventListener("keydown", (e) => {
+            e.stopPropagation() // prevent sending to Browserless while typing URL
+        })
+    </script>
+</body>
+</html>
 canvas.onwheel = (e) => {
     ws.send(JSON.stringify({
         type: "scroll",
