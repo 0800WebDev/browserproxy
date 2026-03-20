@@ -23,7 +23,7 @@ const ctx = canvas.getContext("2d")
 let ws
 
 function connect() {
-    ws = new WebSocket("wss://browserproxy.onrender.com/")
+    ws = new WebSocket("wss://browserproxy.onrender.com")
     ws.binaryType = "blob"
 
     ws.onopen = () => console.log("WS connected")
@@ -42,7 +42,12 @@ function connect() {
 
 connect()
 
+let lastGoto = 0
 function go() {
+    const now = Date.now()
+    if (now - lastGoto < 2000) return // 2s cooldown
+    lastGoto = now
+
     let url = document.getElementById("url").value.trim()
     if (!/^https?:\/\//i.test(url)) url = "https://" + url
     console.log("Sending URL:", url)
