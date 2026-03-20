@@ -9,7 +9,9 @@ process.on("uncaughtException", e => console.log("CRASH:", e))
 const app = express()
 app.use(express.static(path.join(__dirname, "public")))
 
-const server = app.listen(process.env.PORT || 3000)
+const server = app.listen(process.env.PORT || 3000, () => {
+    console.log("Server running")
+})
 
 const wss = new WebSocketServer({ server })
 
@@ -19,20 +21,38 @@ function sleep(ms) {
     return new Promise(r => setTimeout(r, ms))
 }
 
-async function newBrowser() {
-    return await puppeteer.connect({ browserWSEndpoint: BROWSERLESS })
+async function connectBrowser() {
+    for (let i = 0; i < 3; i++) {
+        try {
+            const browser = await puppeteer.connect({
+                browserWSEndpoint: BROWSERLESS
+            })
+            return browser
+        } catch (e) {
+            console.log("Connect fail, retrying...", e.message)
+            await sleep(1000)
+        }
+    }
+    throw new Error("Failed to connect to Browserless")
 }
 
 wss.on("connection", async (ws) => {
     let browser, page
+    let lastOk = Date.now()
+    let running = true
 
     async function start(url = "https://example.com") {
         try { if (browser) await browser.close() } catch {}
 
-        browser = await newBrowser()
+        browser = await connectBrowser()
         page = await browser.newPage()
 
         await page.setViewport({ width: 1280, height: 720 })
+
+        // slight anti-detection
+        await page.setUserAgent(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+        )
 
         try {
             await page.goto(url, {
@@ -41,17 +61,21 @@ wss.on("connection", async (ws) => {
             })
 
             await page.evaluate(() => window.stop())
-        } catch {}
+        } catch (e) {
+            console.log("Goto error:", e.message)
+        }
+
+        lastOk = Date.now()
     }
 
     try {
         await start()
     } catch (e) {
-        console.log("START FAIL:", e.message)
+        console.log("Startup failed:", e.message)
     }
 
     async function stream() {
-        while (ws.readyState === 1) {
+        while (running && ws.readyState === 1) {
             try {
                 if (page) {
                     const img = await page.screenshot({
@@ -59,8 +83,21 @@ wss.on("connection", async (ws) => {
                         quality: 30
                     })
                     ws.send(img)
+                    lastOk = Date.now()
                 }
-            } catch {}
+            } catch (e) {
+                console.log("Stream error:", e.message)
+            }
+
+            // auto-restart if frozen (10s no frames)
+            if (Date.now() - lastOk > 10000) {
+                console.log("Frozen → restarting session")
+                try {
+                    await start("https://example.com")
+                } catch (e) {
+                    console.log("Restart failed:", e.message)
+                }
+            }
 
             await sleep(300)
         }
@@ -71,6 +108,8 @@ wss.on("connection", async (ws) => {
     ws.on("message", async (msg) => {
         try {
             const data = JSON.parse(msg)
+
+            if (!page) return
 
             if (data.type === "goto") {
                 await start(data.url)
@@ -102,7 +141,9 @@ wss.on("connection", async (ws) => {
     })
 
     ws.on("close", async () => {
+        running = false
         try { if (browser) await browser.close() } catch {}
+        console.log("Client disconnected")
     })
 })
 
