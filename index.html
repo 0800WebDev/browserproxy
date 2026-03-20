@@ -1,0 +1,58 @@
+<input id="url" placeholder="https://example.com">
+<button onclick="go()">Go</button>
+
+<canvas id="view" width="800" height="600"></canvas>
+
+<script>
+const ws = new WebSocket("ws://localhost:3000")
+
+const canvas = document.getElementById("view")
+const ctx = canvas.getContext("2d")
+
+ws.binaryType = "blob"
+
+ws.onmessage = async (event) => {
+    const img = new Image()
+    img.src = URL.createObjectURL(event.data)
+    img.onload = () => {
+        ctx.drawImage(img, 0, 0)
+    }
+}
+
+function go() {
+    ws.send(JSON.stringify({
+        type: "goto",
+        url: document.getElementById("url").value
+    }))
+}
+
+canvas.onclick = (e) => {
+    const rect = canvas.getBoundingClientRect()
+    ws.send(JSON.stringify({
+        type: "click",
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+    }))
+}
+
+canvas.onwheel = (e) => {
+    ws.send(JSON.stringify({
+        type: "scroll",
+        deltaY: e.deltaY
+    }))
+}
+
+document.addEventListener("keydown", (e) => {
+    ws.send(JSON.stringify({
+        type: "keydown",
+        key: e.key
+    }))
+})
+
+document.addEventListener("keyup", (e) => {
+    ws.send(JSON.stringify({
+        type: "keyup",
+        key: e.key
+    }))
+})
+</script>
