@@ -1,25 +1,25 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Browser Stream</title>
+<title>Browser Proxy</title>
 <style>
-body { font-family: sans-serif; text-align: center; }
-canvas { border: 1px solid black; cursor: pointer; }
+body { font-family: sans-serif; text-align: center; margin: 20px; }
+canvas { border: 1px solid #333; cursor: pointer; }
+input, button { font-size: 16px; padding: 5px 10px; margin: 5px; }
 </style>
 </head>
 <body>
 
-<input id="url" placeholder="https://example.com" size="40">
+<h1>Browser Proxy</h1>
+<input id="url" placeholder="https://example.com" size="50">
 <button onclick="go()">Go</button>
 <br><br>
-
 <canvas id="view" width="800" height="600"></canvas>
 
 <script>
 const canvas = document.getElementById("view")
 const ctx = canvas.getContext("2d")
-
 let ws
 
 function connect() {
@@ -27,12 +27,10 @@ function connect() {
     ws.binaryType = "blob"
 
     ws.onopen = () => console.log("WS connected")
-
     ws.onclose = () => {
         console.log("WS disconnected, reconnecting...")
         setTimeout(connect, 1000)
     }
-
     ws.onerror = () => ws.close()
 
     ws.onmessage = async (event) => {
@@ -47,9 +45,11 @@ connect()
 function go() {
     let url = document.getElementById("url").value.trim()
     if (!/^https?:\/\//i.test(url)) url = "https://" + url
+    console.log("Sending URL:", url)
     ws.send(JSON.stringify({ type: "goto", url }))
 }
 
+// Mouse click
 canvas.onclick = (e) => {
     const rect = canvas.getBoundingClientRect()
     ws.send(JSON.stringify({
@@ -59,25 +59,17 @@ canvas.onclick = (e) => {
     }))
 }
 
+// Scroll
 canvas.onwheel = (e) => {
-    ws.send(JSON.stringify({
-        type: "scroll",
-        deltaY: e.deltaY
-    }))
+    ws.send(JSON.stringify({ type: "scroll", deltaY: e.deltaY }))
     e.preventDefault()
 }
 
-document.addEventListener("keydown", (e) => {
-    ws.send(JSON.stringify({ type: "keydown", key: e.key }))
-})
+// Keyboard
+document.addEventListener("keydown", e => ws.send(JSON.stringify({ type: "keydown", key: e.key })))
+document.addEventListener("keyup", e => ws.send(JSON.stringify({ type: "keyup", key: e.key })))
 
-document.addEventListener("keyup", (e) => {
-    ws.send(JSON.stringify({ type: "keyup", key: e.key }))
-})
-
-document.getElementById("url").addEventListener("keydown", (e) => {
-    e.stopPropagation()
-})
+document.getElementById("url").addEventListener("keydown", e => e.stopPropagation())
 </script>
 
 </body>
