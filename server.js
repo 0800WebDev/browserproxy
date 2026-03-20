@@ -1,3 +1,7 @@
+const path = require("path")
+
+app.use(express.static(path.join(__dirname, "public")))
+
 const express = require("express")
 const { WebSocketServer } = require("ws")
 const puppeteer = require("puppeteer-core")
