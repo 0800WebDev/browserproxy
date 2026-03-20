@@ -4,7 +4,7 @@
 <canvas id="view" width="800" height="600"></canvas>
 
 <script>
-const ws = new WebSocket("ws://localhost:3000")
+const ws = new WebSocket("wss:/browserproxy.onrender.com")
 
 const canvas = document.getElementById("view")
 const ctx = canvas.getContext("2d")
