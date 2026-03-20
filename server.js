@@ -55,7 +55,7 @@ wss.on("connection", async (ws) => {
     try {
         sessionId = await createSession()
         ({ page, browser } = sessions[sessionId])
-        await page.goto("https://example.com").catch(err => console.log("Initial goto failed:", err.message))
+        await page.goto("https://google.com").catch(err => console.log("Initial goto failed:", err.message))
     } catch (err) {
         console.log("Could not create initial session:", err.message)
     }
@@ -82,7 +82,7 @@ wss.on("connection", async (ws) => {
             if (data.type === "goto") {
                 console.log("Navigating to:", data.url)
                 try {
-                    await page.goto(data.url, { waitUntil: "networkidle2", timeout: 20000 })
+                    await page.goto(data.url, { waitUntil: "networkidle2", timeout: 60000 })
                 } catch (err) {
                     console.log("Goto failed, restarting session:", err.message)
                     // Close old session safely
