@@ -2,10 +2,13 @@
 <html>
 <body style="margin:0;background:black">
 
-<input id="url" placeholder="https://example.com" style="width:70%">
+<input id="url" placeholder="https://example.com" style="width:60%">
 <button onclick="go()">Go</button>
 
-<canvas id="view" width="1280" height="720"></canvas>
+<input id="text" placeholder="type here">
+<button onclick="sendText()">Type</button>
+
+<canvas id="view" width="1280" height="720" tabindex="0"></canvas>
 
 <script>
 const canvas = document.getElementById("view")
@@ -36,6 +39,12 @@ function go() {
     ws.send(JSON.stringify({ type: "goto", url }))
 }
 
+function sendText() {
+    const text = document.getElementById("text").value
+    ws.send(JSON.stringify({ type: "type", text }))
+}
+
+// click
 canvas.onclick = (e) => {
     const r = canvas.getBoundingClientRect()
     ws.send(JSON.stringify({
@@ -43,12 +52,28 @@ canvas.onclick = (e) => {
         x: e.clientX - r.left,
         y: e.clientY - r.top
     }))
+    canvas.focus()
 }
 
+// scroll
 canvas.onwheel = (e) => {
     ws.send(JSON.stringify({ type: "scroll", deltaY: e.deltaY }))
     e.preventDefault()
 }
+
+// keyboard live typing
+document.addEventListener("keydown", (e) => {
+    ws.send(JSON.stringify({ type: "keydown", key: e.key }))
+})
+
+document.addEventListener("keyup", (e) => {
+    ws.send(JSON.stringify({ type: "keyup", key: e.key }))
+})
+
+// prevent typing into URL box from sending to browser
+document.getElementById("url").addEventListener("keydown", e => e.stopPropagation())
+document.getElementById("text").addEventListener("keydown", e => e.stopPropagation())
+
 </script>
 
 </body>
