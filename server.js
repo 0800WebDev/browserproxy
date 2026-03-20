@@ -1,25 +1,27 @@
-
-
 const express = require("express")
+const path = require("path")
 const { WebSocketServer } = require("ws")
 const puppeteer = require("puppeteer-core")
 const { v4: uuidv4 } = require("uuid")
 
 const app = express()
-const server = app.listen(3000)
 
-
-
-const path = require("path")
-
+// Serve static files from public (JS/CSS)
 app.use(express.static(path.join(__dirname, "public")))
 
+// Explicit route for root
+app.get("/", (req, res) => {
+    res.sendFile(path.join(__dirname, "public/index.html"))
+})
 
+// Start server AFTER routes
+const PORT = process.env.PORT || 3000
+const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`))
 
+// WebSocket server
 const wss = new WebSocketServer({ server })
 
 const BROWSERLESS = "wss://chrome.browserless.io?token=2UBJVCkwHOHI1DPb78f07999a252781c38e90ebab407a045f"
-
 const sessions = {}
 
 async function createSession() {
@@ -34,6 +36,7 @@ async function createSession() {
     return id
 }
 
+// Handle WebSocket connections
 wss.on("connection", async (ws) => {
     let sessionId = await createSession()
     let { page } = sessions[sessionId]
@@ -52,29 +55,12 @@ wss.on("connection", async (ws) => {
     ws.on("message", async (msg) => {
         const data = JSON.parse(msg)
 
-        if (data.type === "goto") {
-            await page.goto(data.url)
-        }
-
-        if (data.type === "click") {
-            await page.mouse.click(data.x, data.y)
-        }
-
-        if (data.type === "scroll") {
-            await page.mouse.wheel({ deltaY: data.deltaY })
-        }
-
-        if (data.type === "type") {
-            await page.keyboard.type(data.text)
-        }
-
-        if (data.type === "keydown") {
-            await page.keyboard.down(data.key)
-        }
-
-        if (data.type === "keyup") {
-            await page.keyboard.up(data.key)
-        }
+        if (data.type === "goto") await page.goto(data.url)
+        if (data.type === "click") await page.mouse.click(data.x, data.y)
+        if (data.type === "scroll") await page.mouse.wheel({ deltaY: data.deltaY })
+        if (data.type === "type") await page.keyboard.type(data.text)
+        if (data.type === "keydown") await page.keyboard.down(data.key)
+        if (data.type === "keyup") await page.keyboard.up(data.key)
     })
 
     ws.on("close", async () => {
