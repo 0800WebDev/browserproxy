@@ -8,7 +8,7 @@ const server = app.listen(3000)
 
 const wss = new WebSocketServer({ server })
 
-const BROWSERLESS = "wss://chrome.browserless.io?token=YOUR_TOKEN"
+const BROWSERLESS = "wss://chrome.browserless.io?token=2UBJVCkwHOHI1DPb78f07999a252781c38e90ebab407a045f"
 
 const sessions = {}
 
