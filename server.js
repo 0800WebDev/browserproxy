@@ -27,27 +27,20 @@ wss.on("connection", async (ws) => {
     let browser, page
 
     async function start(url = "https://example.com") {
-    async function start(url = "https://example.com") {
-    try { if (browser) await browser.close() } catch {}
+        try { if (browser) await browser.close() } catch {}
 
-    browser = await newBrowser()
-    page = await browser.newPage()
+        browser = await newBrowser()
+        page = await browser.newPage()
 
-    await page.setViewport({ width: 1280, height: 720 })
+        await page.setViewport({ width: 1280, height: 720 })
 
-    try {
-        await page.goto(url, {
-            waitUntil: "domcontentloaded",
-            timeout: 0 // ← NO TIMEOUT
-        })
+        try {
+            await page.goto(url, {
+                waitUntil: "domcontentloaded",
+                timeout: 0
+            })
 
-        await page.evaluate(() => window.stop())
-
-    } catch {}
-    }
-            // STOP infinite loading
             await page.evaluate(() => window.stop())
-
         } catch {}
     }
 
@@ -60,11 +53,13 @@ wss.on("connection", async (ws) => {
     async function stream() {
         while (ws.readyState === 1) {
             try {
-                const img = await page.screenshot({
-                    type: "jpeg",
-                    quality: 30
-                })
-                ws.send(img)
+                if (page) {
+                    const img = await page.screenshot({
+                        type: "jpeg",
+                        quality: 30
+                    })
+                    ws.send(img)
+                }
             } catch {}
 
             await sleep(300)
@@ -74,37 +69,37 @@ wss.on("connection", async (ws) => {
     stream()
 
     ws.on("message", async (msg) => {
-    try {
-        const data = JSON.parse(msg)
+        try {
+            const data = JSON.parse(msg)
 
-        if (data.type === "goto") {
-            await start(data.url)
+            if (data.type === "goto") {
+                await start(data.url)
+            }
+
+            if (data.type === "click") {
+                await page.mouse.click(data.x, data.y)
+            }
+
+            if (data.type === "scroll") {
+                await page.mouse.wheel({ deltaY: data.deltaY })
+            }
+
+            if (data.type === "keydown") {
+                await page.keyboard.down(data.key)
+            }
+
+            if (data.type === "keyup") {
+                await page.keyboard.up(data.key)
+            }
+
+            if (data.type === "type") {
+                await page.keyboard.type(data.text)
+            }
+
+        } catch (e) {
+            console.log("MSG ERR:", e.message)
         }
-
-        if (data.type === "click") {
-            await page.mouse.click(data.x, data.y)
-        }
-
-        if (data.type === "scroll") {
-            await page.mouse.wheel({ deltaY: data.deltaY })
-        }
-
-        if (data.type === "keydown") {
-            await page.keyboard.down(data.key)
-        }
-
-        if (data.type === "keyup") {
-            await page.keyboard.up(data.key)
-        }
-
-        if (data.type === "type") {
-            await page.keyboard.type(data.text)
-        }
-
-    } catch (e) {
-        console.log("MSG ERR:", e.message)
-    }
-})
+    })
 
     ws.on("close", async () => {
         try { if (browser) await browser.close() } catch {}
