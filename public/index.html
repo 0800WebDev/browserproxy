@@ -23,7 +23,7 @@ const ctx = canvas.getContext("2d")
 let ws
 
 function connect() {
-    ws = new WebSocket("wss://your-service.onrender.com")
+    ws = new WebSocket("wss://browserproxy.onrender.com")
     ws.binaryType = "blob"
 
     ws.onopen = () => console.log("WS connected")
