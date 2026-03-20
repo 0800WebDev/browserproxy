@@ -64,12 +64,12 @@ wss.on("connection", async (ws) => {
     async function stream() {
         if (ws.readyState !== 1) return
         try {
-            const img = await page.screenshot({ type: "jpeg", quality: 40 })
+            const img = await page.screenshot({ type: "jpeg", quality: 30 })
             ws.send(img)
         } catch (err) {
             console.log("Stream error:", err.message)
         }
-        setTimeout(stream, 250) // throttled
+        setTimeout(stream, 400) // throttled
     }
 
     stream()
