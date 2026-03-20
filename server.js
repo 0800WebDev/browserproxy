@@ -6,28 +6,26 @@ const { v4: uuidv4 } = require("uuid")
 
 const app = express()
 
-// Serve static files from public (JS/CSS)
 app.use(express.static(path.join(__dirname, "public")))
 
-// Explicit route for root
 app.get("/", (req, res) => {
-    res.sendFile(path.join(__dirname, "public/index.html"))
+    res.sendFile(path.join(__dirname, "public", "index.html"))
 })
 
-// Start server AFTER routes
 const PORT = process.env.PORT || 3000
-const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`))
+const server = app.listen(PORT, () => console.log("Running on", PORT))
 
-// WebSocket server
 const wss = new WebSocketServer({ server })
 
-const BROWSERLESS = "wss://chrome.browserless.io?token=2UBJVCkwHOHI1DPb78f07999a252781c38e90ebab407a045f"
+const BROWSERLESS = `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`
+
 const sessions = {}
 
 async function createSession() {
     const browser = await puppeteer.connect({
         browserWSEndpoint: BROWSERLESS
     })
+
     const page = await browser.newPage()
 
     const id = uuidv4()
@@ -36,7 +34,6 @@ async function createSession() {
     return id
 }
 
-// Handle WebSocket connections
 wss.on("connection", async (ws) => {
     let sessionId = await createSession()
     let { page } = sessions[sessionId]
@@ -45,9 +42,13 @@ wss.on("connection", async (ws) => {
 
     async function stream() {
         if (ws.readyState !== 1) return
-        const img = await page.screenshot({ type: "jpeg", quality: 50 })
-        ws.send(img)
-        setTimeout(stream, 100)
+        try {
+            const img = await page.screenshot({ type: "jpeg", quality: 50 })
+            ws.send(img)
+        } catch (e) {
+            console.log("Stream error:", e.message)
+        }
+        setTimeout(stream, 200)
     }
 
     stream()
@@ -55,12 +56,43 @@ wss.on("connection", async (ws) => {
     ws.on("message", async (msg) => {
         const data = JSON.parse(msg)
 
-        if (data.type === "goto") await page.goto(data.url)
-        if (data.type === "click") await page.mouse.click(data.x, data.y)
-        if (data.type === "scroll") await page.mouse.wheel({ deltaY: data.deltaY })
-        if (data.type === "type") await page.keyboard.type(data.text)
-        if (data.type === "keydown") await page.keyboard.down(data.key)
-        if (data.type === "keyup") await page.keyboard.up(data.key)
+        try {
+            if (data.type === "goto") {
+                await page.goto(data.url, { waitUntil: "networkidle2", timeout: 20000 })
+            }
+
+            if (data.type === "click") {
+                await page.mouse.click(data.x, data.y)
+            }
+
+            if (data.type === "scroll") {
+                await page.mouse.wheel({ deltaY: data.deltaY })
+            }
+
+            if (data.type === "keydown") {
+                await page.keyboard.down(data.key)
+            }
+
+            if (data.type === "keyup") {
+                await page.keyboard.up(data.key)
+            }
+
+        } catch (err) {
+            console.log("Error, restarting session:", err.message)
+
+            try {
+                await sessions[sessionId].browser.close()
+            } catch {}
+
+            sessionId = await createSession()
+            page = sessions[sessionId].page
+
+            try {
+                if (data.url) {
+                    await page.goto(data.url)
+                }
+            } catch {}
+        }
     })
 
     ws.on("close", async () => {
@@ -70,3 +102,8 @@ wss.on("connection", async (ws) => {
         }
     })
 })
+
+// keep-alive for Render
+setInterval(() => {
+    console.log("alive")
+}, 30000)
