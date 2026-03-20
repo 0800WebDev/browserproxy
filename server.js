@@ -1,6 +1,4 @@
-const path = require("path")
 
-app.use(express.static(path.join(__dirname, "public")))
 
 const express = require("express")
 const { WebSocketServer } = require("ws")
@@ -9,6 +7,14 @@ const { v4: uuidv4 } = require("uuid")
 
 const app = express()
 const server = app.listen(3000)
+
+
+
+const path = require("path")
+
+app.use(express.static(path.join(__dirname, "public")))
+
+
 
 const wss = new WebSocketServer({ server })
 
