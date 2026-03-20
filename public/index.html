@@ -1,196 +1,55 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Browser Proxy</title>
-<style>
-  body {
-    font-family: Arial, sans-serif;
-    margin: 16px;
-    background: #111;
-    color: #eee;
-  }
-  .row {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    align-items: center;
-    margin-bottom: 10px;
-  }
-  input, textarea, button {
-    font: inherit;
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 1px solid #444;
-    background: #1b1b1b;
-    color: #eee;
-  }
-  button {
-    cursor: pointer;
-  }
-  button:hover {
-    background: #2a2a2a;
-  }
-  #status {
-    margin: 8px 0 12px;
-    color: #9ad;
-    min-height: 1.2em;
-  }
-  #view {
-    border: 1px solid #444;
-    width: 1280px;
-    height: 720px;
-    max-width: 100%;
-    background: #000;
-    display: block;
-  }
-  .panel {
-    max-width: 1280px;
-  }
-  .small {
-    width: min(100%, 700px);
-  }
-</style>
-</head>
-<body>
-  <div class="panel">
-    <div class="row">
-      <input id="url" class="small" placeholder="https://example.com" />
-      <button id="goBtn">Go</button>
-      <button id="backBtn">Back</button>
-      <button id="reloadBtn">Reload</button>
-    </div>
+<html>
+<body style="margin:0;background:black">
 
-    <div class="row">
-      <textarea id="text" class="small" rows="2" placeholder="Text to type into the page"></textarea>
-      <button id="typeBtn">Type text</button>
-    </div>
+<input id="url" placeholder="https://example.com" style="width:70%">
+<button onclick="go()">Go</button>
 
-    <div id="status">connecting...</div>
-    <canvas id="view" width="1280" height="720" tabindex="0"></canvas>
-  </div>
+<canvas id="view" width="1280" height="720"></canvas>
 
 <script>
 const canvas = document.getElementById("view")
 const ctx = canvas.getContext("2d")
-const statusEl = document.getElementById("status")
-const urlEl = document.getElementById("url")
-const textEl = document.getElementById("text")
 
 let ws
-let reconnectDelay = 1000
-let lastGo = 0
-let lastFrameUrl = null
-
-function setStatus(msg) {
-  statusEl.textContent = msg
-}
-
-function wsUrl() {
-  return (location.protocol === "https:" ? "wss://" : "ws://") + location.host
-}
 
 function connect() {
-  setStatus("connecting...")
-  ws = new WebSocket(wsUrl())
-  ws.binaryType = "blob"
+    ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host)
+    ws.binaryType = "blob"
 
-  ws.onopen = () => {
-    reconnectDelay = 1000
-    setStatus("connected")
-  }
+    ws.onopen = () => console.log("connected")
+    ws.onclose = () => setTimeout(connect, 1000)
+    ws.onerror = () => ws.close()
 
-  ws.onclose = () => {
-    setStatus("disconnected, reconnecting...")
-    setTimeout(connect, reconnectDelay)
-    reconnectDelay = Math.min(reconnectDelay * 1.5, 10000)
-  }
-
-  ws.onerror = () => {
-    try { ws.close() } catch {}
-  }
-
-  ws.onmessage = async (event) => {
-    if (typeof event.data === "string") {
-      try {
-        const msg = JSON.parse(event.data)
-        if (msg.type === "status") setStatus(msg.text)
-      } catch {
-        setStatus(event.data)
-      }
-      return
+    ws.onmessage = async (e) => {
+        const img = new Image()
+        img.src = URL.createObjectURL(e.data)
+        img.onload = () => ctx.drawImage(img, 0, 0)
     }
-
-    const img = new Image()
-    const objectUrl = URL.createObjectURL(event.data)
-    img.onload = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-      URL.revokeObjectURL(objectUrl)
-    }
-    img.src = objectUrl
-  }
 }
 
-function send(data) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return
-  ws.send(JSON.stringify(data))
-}
+connect()
 
 function go() {
-  const now = Date.now()
-  if (now - lastGo < 1500) return
-  lastGo = now
-
-  let url = urlEl.value.trim()
-  if (!url) return
-
-  if (!/^https?:\/\//i.test(url)) url = "https://" + url
-  lastFrameUrl = url
-  send({ type: "goto", url })
-  setStatus("loading " + url)
+    let url = document.getElementById("url").value.trim()
+    if (!url.startsWith("http")) url = "https://" + url
+    ws.send(JSON.stringify({ type: "goto", url }))
 }
-
-function typeText() {
-  const text = textEl.value
-  if (!text) return
-  send({ type: "text", text })
-}
-
-document.getElementById("goBtn").onclick = go
-document.getElementById("typeBtn").onclick = typeText
-document.getElementById("backBtn").onclick = () => send({ type: "back" })
-document.getElementById("reloadBtn").onclick = () => send({ type: "reload" })
 
 canvas.onclick = (e) => {
-  const rect = canvas.getBoundingClientRect()
-  const x = Math.round((e.clientX - rect.left) * (canvas.width / rect.width))
-  const y = Math.round((e.clientY - rect.top) * (canvas.height / rect.height))
-  send({ type: "click", x, y })
-  canvas.focus()
+    const r = canvas.getBoundingClientRect()
+    ws.send(JSON.stringify({
+        type: "click",
+        x: e.clientX - r.left,
+        y: e.clientY - r.top
+    }))
 }
 
 canvas.onwheel = (e) => {
-  send({ type: "scroll", deltaY: e.deltaY })
-  e.preventDefault()
+    ws.send(JSON.stringify({ type: "scroll", deltaY: e.deltaY }))
+    e.preventDefault()
 }
-
-document.addEventListener("keydown", (e) => {
-  if (document.activeElement === urlEl || document.activeElement === textEl) return
-  send({ type: "keydown", key: e.key })
-})
-
-document.addEventListener("keyup", (e) => {
-  if (document.activeElement === urlEl || document.activeElement === textEl) return
-  send({ type: "keyup", key: e.key })
-})
-
-urlEl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") go()
-})
-
-connect()
 </script>
+
 </body>
 </html>
