@@ -132,9 +132,13 @@ wss.on("connection", async (ws) => {
                 }
             } catch (e) { console.log("Stream error:", e.message) }
 
-            if (Date.now() - lastOk > 10000) {
-                console.log("Frozen → restarting SAME page with storage")
-                try { await start() } catch (e) { console.log("Restart failed:", e.message) }
+            if (Date.now() - lastOk > 10000 && page) {
+    try {
+        await page.reload({ waitUntil: "domcontentloaded", timeout: 0 })
+        lastOk = Date.now()
+    } catch (e) {
+        console.log("Reload failed:", e.message)
+    }
             }
 
             await sleep(300)
