@@ -37,20 +37,14 @@ wss.on("connection", async (ws) => {
     let lastOk = Date.now()
     let running = true
 
-    // Track exact current page
     let currentUrl = "https://google.com"
-
-    // Storage persistence
     let savedLocalStorage = {}
     let savedCookies = []
 
     async function saveStorage() {
         if (!page) return
         try {
-            // Save cookies
             savedCookies = await page.cookies()
-
-            // Save all frames localStorage
             savedLocalStorage = await page.evaluate(() => {
                 function getAllStorage(win) {
                     let data = {}
@@ -67,8 +61,6 @@ wss.on("connection", async (ws) => {
                 }
                 return getAllStorage(window)
             })
-
-            // Save exact current URL
             currentUrl = await page.evaluate(() => window.location.href)
         } catch (e) {
             console.log("Save storage error:", e.message)
@@ -76,19 +68,20 @@ wss.on("connection", async (ws) => {
     }
 
     async function start(url) {
-        if (url) currentUrl = url
+        const isNewUrl = !!url
+        if (isNewUrl) currentUrl = url
 
-        await saveStorage()
+        // Save storage only if restarting old page
+        if (!isNewUrl) await saveStorage()
 
         try { if (browser) await browser.close() } catch {}
 
         browser = await connectBrowser()
         page = await browser.newPage()
-
         await page.setViewport({ width: 1280, height: 720 })
         await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36")
 
-        // Handle new tabs by redirecting them to the same page
+        // Handle new tabs by redirecting to same session
         page.on("popup", async popup => {
             try {
                 const url = popup.url()
@@ -100,15 +93,12 @@ wss.on("connection", async (ws) => {
             await page.goto(currentUrl, { waitUntil: "domcontentloaded", timeout: 0 })
             await page.evaluate(() => window.stop())
 
-            // Restore cookies
-            if (savedCookies.length) await page.setCookie(...savedCookies)
-
-            // Restore localStorage
-            if (savedLocalStorage) {
+            // Restore storage only if this was NOT a user Go click
+            if (!isNewUrl && savedLocalStorage && savedCookies.length) {
+                await page.setCookie(...savedCookies)
                 await page.evaluate((data) => {
                     for (const k in data) localStorage.setItem(k, data[k])
                 }, savedLocalStorage)
-
                 await page.reload({ waitUntil: "domcontentloaded", timeout: 0 })
                 await page.evaluate(() => window.stop())
             }
@@ -133,12 +123,8 @@ wss.on("connection", async (ws) => {
             } catch (e) { console.log("Stream error:", e.message) }
 
             if (Date.now() - lastOk > 10000 && page) {
-    try {
-        await page.reload({ waitUntil: "domcontentloaded", timeout: 0 })
-        lastOk = Date.now()
-    } catch (e) {
-        console.log("Reload failed:", e.message)
-    }
+                console.log("Frozen → reloading SAME page")
+                try { await page.reload({ waitUntil: "domcontentloaded", timeout: 0 }); await page.evaluate(() => window.stop()); lastOk = Date.now() } catch (e) { console.log("Reload failed:", e.message) }
             }
 
             await sleep(300)
@@ -153,9 +139,7 @@ wss.on("connection", async (ws) => {
             if (!page) return
 
             if (data.type === "goto") {
-                savedLocalStorage = {}
-                savedCookies = []
-                await start(data.url)
+                await start(data.url) // now Go button always navigates first try
             }
 
             if (data.type === "click") await page.mouse.click(data.x, data.y)
