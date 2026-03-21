@@ -2,11 +2,12 @@ body {
   text-align: center;
   color: white;
 }
-input {
+#url {
   height: 30px;
   border: none;
   border-radius: 10px;
 }
+
 button {
   border: none;
   border-radius: 6px;
