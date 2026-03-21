@@ -98,6 +98,16 @@ function fullscreenCanvas() {
   }
                            }
 </script>
-
+<script>
+window.addEventListener("DOMContentLoaded", () => {
+    const raw = window.location.search; // e.g., "?example.com"
+    if (raw.length > 1) { // there is something after "?"
+        let url = raw.slice(1); // remove the "?"
+        if (!url.startsWith("http")) url = "https://" + url; // add https if missing
+        document.getElementById("url").value = url; // fill input
+        go(); // call your function
+    }
+});
+</script>
 </body>
 </html>
