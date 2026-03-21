@@ -41,7 +41,7 @@ wss.on("connection", async (ws) => {
     let lastOk = Date.now()
     let running = true
 
-    async function start(url = "https://example.com") {
+    async function start(url = "https://google.com") {
         try { if (browser) await browser.close() } catch {}
 
         browser = await connectBrowser()
