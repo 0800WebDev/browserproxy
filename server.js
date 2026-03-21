@@ -14,7 +14,6 @@ const server = app.listen(process.env.PORT || 3000, () => {
 })
 
 const wss = new WebSocketServer({ server })
-
 const BROWSERLESS = `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`
 
 function sleep(ms) {
@@ -24,10 +23,7 @@ function sleep(ms) {
 async function connectBrowser() {
     for (let i = 0; i < 3; i++) {
         try {
-            const browser = await puppeteer.connect({
-                browserWSEndpoint: BROWSERLESS
-            })
-            return browser
+            return await puppeteer.connect({ browserWSEndpoint: BROWSERLESS })
         } catch (e) {
             console.log("Connect fail, retrying...", e.message)
             await sleep(1000)
@@ -41,32 +37,48 @@ wss.on("connection", async (ws) => {
     let lastOk = Date.now()
     let running = true
 
-    // Track full URL
+    // Track exact current page
     let currentUrl = "https://google.com"
 
-    // Storage per URL
-    let storageCache = {}
+    // Storage persistence
+    let savedLocalStorage = {}
+    let savedCookies = []
+
+    async function saveStorage() {
+        if (!page) return
+        try {
+            // Save cookies
+            savedCookies = await page.cookies()
+
+            // Save all frames localStorage
+            savedLocalStorage = await page.evaluate(() => {
+                function getAllStorage(win) {
+                    let data = {}
+                    try {
+                        for (let i = 0; i < win.localStorage.length; i++) {
+                            const k = win.localStorage.key(i)
+                            data[k] = win.localStorage.getItem(k)
+                        }
+                        for (const f of win.frames) {
+                            Object.assign(data, getAllStorage(f))
+                        }
+                    } catch {}
+                    return data
+                }
+                return getAllStorage(window)
+            })
+
+            // Save exact current URL
+            currentUrl = await page.evaluate(() => window.location.href)
+        } catch (e) {
+            console.log("Save storage error:", e.message)
+        }
+    }
 
     async function start(url) {
         if (url) currentUrl = url
 
-        // SAVE STORAGE BEFORE RESET
-        if (page) {
-            try {
-                const localStorageData = await page.evaluate(() => {
-                    let data = {}
-                    for (let i = 0; i < localStorage.length; i++) {
-                        const key = localStorage.key(i)
-                        data[key] = localStorage.getItem(key)
-                    }
-                    return data
-                })
-                const cookies = await page.cookies()
-                storageCache[currentUrl] = { localStorage: localStorageData, cookies }
-            } catch (e) {
-                console.log("Save storage error:", e.message)
-            }
-        }
+        await saveStorage()
 
         try { if (browser) await browser.close() } catch {}
 
@@ -74,48 +86,31 @@ wss.on("connection", async (ws) => {
         page = await browser.newPage()
 
         await page.setViewport({ width: 1280, height: 720 })
+        await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36")
 
-        await page.setUserAgent(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
-        )
-
-        // intercept _blank links to open in same page
-        await page.evaluateOnNewDocument(() => {
-            const origOpen = window.open
-            window.open = function(url, target, features) {
-                return window.location.assign(url)
-            }
+        // Handle new tabs by redirecting them to the same page
+        page.on("popup", async popup => {
+            try {
+                const url = popup.url()
+                await start(url)
+            } catch {}
         })
 
-        // RESTORE COOKIES AND LOCALSTORAGE if cached
-        const cache = storageCache[currentUrl]
-        if (cache) {
-            try {
-                if (cache.cookies) await page.setCookie(...cache.cookies)
-            } catch {}
-        }
-
         try {
-            await page.goto(currentUrl, {
-                waitUntil: "domcontentloaded",
-                timeout: 0
-            })
-
+            await page.goto(currentUrl, { waitUntil: "domcontentloaded", timeout: 0 })
             await page.evaluate(() => window.stop())
 
-            // restore localStorage
-            if (cache && cache.localStorage) {
-                try {
-                    await page.evaluate((data) => {
-                        for (const key in data) {
-                            localStorage.setItem(key, data[key])
-                        }
-                    }, cache.localStorage)
+            // Restore cookies
+            if (savedCookies.length) await page.setCookie(...savedCookies)
 
-                    // reload once to apply storage
-                    await page.reload({ waitUntil: "domcontentloaded", timeout: 0 })
-                    await page.evaluate(() => window.stop())
-                } catch (e) {}
+            // Restore localStorage
+            if (savedLocalStorage) {
+                await page.evaluate((data) => {
+                    for (const k in data) localStorage.setItem(k, data[k])
+                }, savedLocalStorage)
+
+                await page.reload({ waitUntil: "domcontentloaded", timeout: 0 })
+                await page.evaluate(() => window.stop())
             }
 
         } catch (e) {
@@ -125,34 +120,21 @@ wss.on("connection", async (ws) => {
         lastOk = Date.now()
     }
 
-    try {
-        await start()
-    } catch (e) {
-        console.log("Startup failed:", e.message)
-    }
+    try { await start() } catch (e) { console.log("Startup failed:", e.message) }
 
     async function stream() {
         while (running && ws.readyState === 1) {
             try {
                 if (page) {
-                    const img = await page.screenshot({
-                        type: "jpeg",
-                        quality: 30
-                    })
+                    const img = await page.screenshot({ type: "jpeg", quality: 30 })
                     ws.send(img)
                     lastOk = Date.now()
                 }
-            } catch (e) {
-                console.log("Stream error:", e.message)
-            }
+            } catch (e) { console.log("Stream error:", e.message) }
 
             if (Date.now() - lastOk > 10000) {
                 console.log("Frozen → restarting SAME page with storage")
-                try {
-                    await start()
-                } catch (e) {
-                    console.log("Restart failed:", e.message)
-                }
+                try { await start() } catch (e) { console.log("Restart failed:", e.message) }
             }
 
             await sleep(300)
@@ -167,6 +149,8 @@ wss.on("connection", async (ws) => {
             if (!page) return
 
             if (data.type === "goto") {
+                savedLocalStorage = {}
+                savedCookies = []
                 await start(data.url)
             }
 
@@ -176,9 +160,7 @@ wss.on("connection", async (ws) => {
             if (data.type === "keyup") await page.keyboard.up(data.key)
             if (data.type === "type") await page.keyboard.type(data.text)
 
-        } catch (e) {
-            console.log("MSG ERR:", e.message)
-        }
+        } catch (e) { console.log("MSG ERR:", e.message) }
     })
 
     ws.on("close", async () => {
