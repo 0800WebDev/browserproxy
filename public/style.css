@@ -8,6 +8,12 @@ body {
   border-radius: 10px;
 }
 
+#text {
+  height: 20px;
+  border: none;
+  border-radius: 10px;
+}
+
 button {
   border: none;
   border-radius: 6px;
