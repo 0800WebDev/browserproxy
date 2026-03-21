@@ -43,8 +43,29 @@ wss.on("connection", async (ws) => {
 
     let currentUrl = "https://google.com"
 
+    let savedLocalStorage = {}
+    let savedCookies = []
+
     async function start(url) {
         if (url) currentUrl = url
+
+        // SAVE STORAGE BEFORE RESET
+        if (page) {
+            try {
+                savedLocalStorage = await page.evaluate(() => {
+                    let data = {}
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i)
+                        data[key] = localStorage.getItem(key)
+                    }
+                    return data
+                })
+
+                savedCookies = await page.cookies()
+            } catch (e) {
+                console.log("Save storage error:", e.message)
+            }
+        }
 
         try { if (browser) await browser.close() } catch {}
 
@@ -57,6 +78,13 @@ wss.on("connection", async (ws) => {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
         )
 
+        // RESTORE COOKIES
+        if (savedCookies.length) {
+            try {
+                await page.setCookie(...savedCookies)
+            } catch {}
+        }
+
         try {
             await page.goto(currentUrl, {
                 waitUntil: "domcontentloaded",
@@ -64,6 +92,20 @@ wss.on("connection", async (ws) => {
             })
 
             await page.evaluate(() => window.stop())
+
+            // RESTORE LOCAL STORAGE
+            if (savedLocalStorage) {
+                await page.evaluate((data) => {
+                    for (const key in data) {
+                        localStorage.setItem(key, data[key])
+                    }
+                }, savedLocalStorage)
+
+                // reload to apply it
+                await page.reload({ waitUntil: "domcontentloaded", timeout: 0 })
+                await page.evaluate(() => window.stop())
+            }
+
         } catch (e) {
             console.log("Goto error:", e.message)
         }
@@ -92,8 +134,9 @@ wss.on("connection", async (ws) => {
                 console.log("Stream error:", e.message)
             }
 
+            // AUTO RESTART (same page + storage)
             if (Date.now() - lastOk > 10000) {
-                console.log("Frozen → restarting SAME page")
+                console.log("Frozen → restarting SAME page with storage")
                 try {
                     await start()
                 } catch (e) {
@@ -114,6 +157,8 @@ wss.on("connection", async (ws) => {
             if (!page) return
 
             if (data.type === "goto") {
+                savedLocalStorage = {}
+                savedCookies = []
                 await start(data.url)
             }
 
