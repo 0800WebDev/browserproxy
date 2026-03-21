@@ -24,6 +24,6 @@ button {
 button:hover {
   background-color: lightgrey;
 }
-#left {
+.left {
   text-align: left;
 }
