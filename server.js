@@ -41,7 +41,11 @@ wss.on("connection", async (ws) => {
     let lastOk = Date.now()
     let running = true
 
-    async function start(url = "https://google.com") {
+    let currentUrl = "https://google.com"
+
+    async function start(url) {
+        if (url) currentUrl = url
+
         try { if (browser) await browser.close() } catch {}
 
         browser = await connectBrowser()
@@ -49,13 +53,12 @@ wss.on("connection", async (ws) => {
 
         await page.setViewport({ width: 1280, height: 720 })
 
-        // slight anti-detection
         await page.setUserAgent(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
         )
 
         try {
-            await page.goto(url, {
+            await page.goto(currentUrl, {
                 waitUntil: "domcontentloaded",
                 timeout: 0
             })
@@ -89,11 +92,10 @@ wss.on("connection", async (ws) => {
                 console.log("Stream error:", e.message)
             }
 
-            // auto-restart if frozen (10s no frames)
             if (Date.now() - lastOk > 10000) {
-                console.log("Frozen → restarting session")
+                console.log("Frozen → restarting SAME page")
                 try {
-                    await start("https://example.com")
+                    await start()
                 } catch (e) {
                     console.log("Restart failed:", e.message)
                 }
