@@ -1,4 +1,4 @@
-body {
+10px {
   text-align: center;
   color: white;
 }
@@ -11,7 +11,7 @@ body {
 #text {
   height: 20px;
   border: none;
-  border-radius: 10px;
+  border-radius: 5px;
 }
 
 button {
@@ -19,6 +19,10 @@ button {
   border-radius: 6px;
   background-color: grey;
   color: black;
+  cursor: pointer;
+}
+button:hover {
+  background-color: lightgrey;
 }
 #left {
   text-align: left;
