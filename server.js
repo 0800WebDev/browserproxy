@@ -41,10 +41,11 @@ wss.on("connection", async (ws) => {
     let lastOk = Date.now()
     let running = true
 
+    // Track full URL
     let currentUrl = "https://google.com"
 
-    let savedLocalStorage = {}
-    let savedCookies = []
+    // Storage per URL
+    let storageCache = {}
 
     async function start(url) {
         if (url) currentUrl = url
@@ -52,7 +53,7 @@ wss.on("connection", async (ws) => {
         // SAVE STORAGE BEFORE RESET
         if (page) {
             try {
-                savedLocalStorage = await page.evaluate(() => {
+                const localStorageData = await page.evaluate(() => {
                     let data = {}
                     for (let i = 0; i < localStorage.length; i++) {
                         const key = localStorage.key(i)
@@ -60,8 +61,8 @@ wss.on("connection", async (ws) => {
                     }
                     return data
                 })
-
-                savedCookies = await page.cookies()
+                const cookies = await page.cookies()
+                storageCache[currentUrl] = { localStorage: localStorageData, cookies }
             } catch (e) {
                 console.log("Save storage error:", e.message)
             }
@@ -78,10 +79,19 @@ wss.on("connection", async (ws) => {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
         )
 
-        // RESTORE COOKIES
-        if (savedCookies.length) {
+        // intercept _blank links to open in same page
+        await page.evaluateOnNewDocument(() => {
+            const origOpen = window.open
+            window.open = function(url, target, features) {
+                return window.location.assign(url)
+            }
+        })
+
+        // RESTORE COOKIES AND LOCALSTORAGE if cached
+        const cache = storageCache[currentUrl]
+        if (cache) {
             try {
-                await page.setCookie(...savedCookies)
+                if (cache.cookies) await page.setCookie(...cache.cookies)
             } catch {}
         }
 
@@ -93,17 +103,19 @@ wss.on("connection", async (ws) => {
 
             await page.evaluate(() => window.stop())
 
-            // RESTORE LOCAL STORAGE
-            if (savedLocalStorage) {
-                await page.evaluate((data) => {
-                    for (const key in data) {
-                        localStorage.setItem(key, data[key])
-                    }
-                }, savedLocalStorage)
+            // restore localStorage
+            if (cache && cache.localStorage) {
+                try {
+                    await page.evaluate((data) => {
+                        for (const key in data) {
+                            localStorage.setItem(key, data[key])
+                        }
+                    }, cache.localStorage)
 
-                // reload to apply it
-                await page.reload({ waitUntil: "domcontentloaded", timeout: 0 })
-                await page.evaluate(() => window.stop())
+                    // reload once to apply storage
+                    await page.reload({ waitUntil: "domcontentloaded", timeout: 0 })
+                    await page.evaluate(() => window.stop())
+                } catch (e) {}
             }
 
         } catch (e) {
@@ -134,7 +146,6 @@ wss.on("connection", async (ws) => {
                 console.log("Stream error:", e.message)
             }
 
-            // AUTO RESTART (same page + storage)
             if (Date.now() - lastOk > 10000) {
                 console.log("Frozen → restarting SAME page with storage")
                 try {
@@ -153,34 +164,17 @@ wss.on("connection", async (ws) => {
     ws.on("message", async (msg) => {
         try {
             const data = JSON.parse(msg)
-
             if (!page) return
 
             if (data.type === "goto") {
-                savedLocalStorage = {}
-                savedCookies = []
                 await start(data.url)
             }
 
-            if (data.type === "click") {
-                await page.mouse.click(data.x, data.y)
-            }
-
-            if (data.type === "scroll") {
-                await page.mouse.wheel({ deltaY: data.deltaY })
-            }
-
-            if (data.type === "keydown") {
-                await page.keyboard.down(data.key)
-            }
-
-            if (data.type === "keyup") {
-                await page.keyboard.up(data.key)
-            }
-
-            if (data.type === "type") {
-                await page.keyboard.type(data.text)
-            }
+            if (data.type === "click") await page.mouse.click(data.x, data.y)
+            if (data.type === "scroll") await page.mouse.wheel({ deltaY: data.deltaY })
+            if (data.type === "keydown") await page.keyboard.down(data.key)
+            if (data.type === "keyup") await page.keyboard.up(data.key)
+            if (data.type === "type") await page.keyboard.type(data.text)
 
         } catch (e) {
             console.log("MSG ERR:", e.message)
